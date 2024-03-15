@@ -1,15 +1,5 @@
 --!strict
 
---[[
-    Luau Memory Module
-    This module provides a simple key-value store with auto-saving functionality using Roblox's DataStore service.
-    It includes the following classes and types:
-    - Memory: Represents the main memory store, which manages entries and auto-saving.
-    - Entry: Represents a single entry in the memory store, with a key, data, and signals for loading and saving.
-    - Config: Represents the configuration options for the memory store, such as the DataStore name and version.
-    The module also includes utility functions for loading, saving, and migrating data.
-]]
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local Promise = require(ReplicatedStorage.Util.Promise)
@@ -58,7 +48,7 @@ local DEFAULT_CONFIG: Config = {
 	Version = 1,
 	Mock = false,
 	CompressThreshold = 256,
-	AutoSaveInterval = 5,
+	AutoSaveInterval = 15,
 }
 
 local Memory = {}
@@ -138,12 +128,8 @@ function Memory:LoadAsync<T>(key: string): Promise.Promise<T>
 
 		if success then
 			data = data or {}
-			local dataSize = #MessagePack.encode(data)
 			if type(data) == "string" and data:sub(1, 2) == "--" then
 				data = MessagePack.decode(Base64.decode(data:sub(3)))
-				print("Loaded data for key " .. tostring(key) .. " (Size: " .. dataSize .. " bytes, Encoded)")
-			else
-				print("Loaded data for key " .. tostring(key) .. " (Size: " .. dataSize .. " bytes, Not Encoded)")
 			end
 
 			self:_migrate(data)

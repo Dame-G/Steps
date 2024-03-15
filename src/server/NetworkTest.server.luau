@@ -35,8 +35,7 @@ local MemoryTemplate = {
 
 local PlayerMemory = Memory.new(MemoryTemplate, {
 	MemoryName = "TestMemory",
-	Version = 2,
-	Mock = false,
+	Version = 3,
 })
 
 local World = ECS.World.new()
@@ -45,53 +44,54 @@ local PlayerSystem = ECS.System.new(function(entity, dt)
 	if not component then
 		return
 	end
-	component:Set({ "Coins", "Current" }, component:Get({ "Coins", "Current" }) + 1)
-end)
-World:AddSystem(PlayerSystem, { "Player" })
+	component:Set({ "Level" }, component:Get({ "Level" }) + 1)
+end, { "Player" })
+World:AddSystem(PlayerSystem)
 
 local PlayerChannel = Network:Create("Player")
 
-game.Players.PlayerAdded:Connect(function(player)
-	local playerEntity = ECS.Entity.new(player)
-	local playerComponent = ECS.Component.new("Player", MemoryTemplate)
-	local save = playerEntity:AddComponent(playerComponent)
-	PlayerMemory:LoadAsync(tostring(player.UserId)):andThen(function(data)
-		save.Data = data
-
-		save.Changed:Connect(function(path, value)
-			local lastKey = table.remove(path, #path)
-			local target = data
-			for _, key in pairs(path) do
-				target = target[key]
-			end
-			target[lastKey] = value
-		end)
-	end)
-
-	player.AncestryChanged:Connect(function(_, parent)
-		if parent == nil then
-			World:RemoveEntity(playerEntity)
-			PlayerMemory:SaveAsync(tostring(player.UserId))
-			PlayerMemory:Release(tostring(player.UserId))
-		end
-	end)
-
-	World:AddEntity(playerEntity)
-	PlayerChannel:SendTo(player, player, player)
-end)
-
-game.Players.PlayerRemoving:Connect(function(player)
+local PlayerRemoved = function(player)
 	local playerEntity = World:GetEntity(function(entity)
 		return entity.Reference == player
 	end)
 	if playerEntity then
 		World:RemoveEntity(playerEntity)
 	end
-
+	print(PlayerMemory:SaveAsync(tostring(player.UserId)):await())
 	PlayerMemory:Release(tostring(player.UserId))
-end)
+end
+local PlayerAdded = function(player: Player)
+	local PlayerEntity = ECS.Entity.new(player)
+	local PlayerComponent = ECS.Component.new("Player", MemoryTemplate)
+	local PlayerSave = PlayerEntity:AddComponent(PlayerComponent)
+	PlayerMemory:LoadAsync(tostring(player.UserId)):andThen(function(data)
+		PlayerSave.Data = data
+		PlayerSave.Changed:Connect(function(path, value)
+			local lastKey = table.remove(path, #path)
+			local target = data
+			for _, key in pairs(path) do
+				target = target[key]
+			end
+			target[lastKey] = value
+			PlayerChannel:SendTo(player, PlayerSave.Data)
+		end)
+
+		World:AddEntity(PlayerEntity)
+		PlayerChannel:SendTo(player, PlayerSave.Data)
+	end)
+
+	player.AncestryChanged:Connect(function(_, parent)
+		if parent == nil then
+			PlayerRemoved(player)
+		end
+	end)
+end
+game.Players.PlayerAdded:Connect(PlayerAdded)
+for _, player in pairs(game.Players:GetPlayers()) do
+	PlayerAdded(player)
+end
 
 while true do
-	task.wait(0.6)
 	World:Update(1)
+	task.wait(0.5)
 end

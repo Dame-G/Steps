@@ -1,16 +1,5 @@
 --!strict
 
---[[
-    Network.luau
-    A channel-based networking library for Roblox using Luau.
-    This library provides a simple way to create and manage network channels for communication between the server and clients.
-    It includes the following classes and types:
-    - Network: Represents the main networking object, which is used to create channels.
-    - Channel: Represents a network channel, which can be used to send and receive data.
-    - Config: Represents the configuration options for a channel, such as throttling and batch size.
-    The library uses MessagePack and LibDeflate for serialization and compression of data, and it also uses promises for handling async operations.
-]]
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -20,6 +9,7 @@ local remoteFunction: RemoteFunction
 local MessagePack = require(ReplicatedStorage.Util.MessagePack)
 local LibDeflate = require(ReplicatedStorage.Util.LibDeflate)
 local Signal = require(ReplicatedStorage.Util.Signal)
+local Http = require(ReplicatedStorage.Util.Http)
 local Promise = require(ReplicatedStorage.Util.Promise)
 
 if RunService:IsServer() then
@@ -40,8 +30,6 @@ end
 local Network = {}
 Network.__index = Network
 
-local channels: { [string]: Channel<any, any, any> } = {}
-
 local Channel = {}
 Channel.__index = Channel
 
@@ -53,24 +41,24 @@ type Config = {
 	CompressThreshold: number?,
 }
 
-type Callback<T> = (...T) -> any
-type RespondCallback<TSend, TReceive> = (player: Player, ...TSend) -> TReceive
+type Callback = (...any) -> any
+type RespondCallback = (player: Player, ...any) -> any
 
-type Channel<TSend, TReceive, TRespond> = {
-	Send: (...TSend) -> (),
-	SendTo: (player: Player, ...TSend) -> (),
-	Broadcast: (...TSend) -> (),
-	Call: (...TSend) -> Promise.Promise<TReceive>,
-	Respond: (callback: RespondCallback<TRespond, TReceive>) -> (),
-	Receive: (callback: Callback<TReceive>) -> Signal.Signal<TReceive>,
-	_received: Signal.Signal<TReceive>,
+type Channel = {
+	Send: (...any) -> (),
+	SendTo: (self: Channel, player: Player, ...any) -> (),
+	Broadcast: (...any) -> (),
+	Call: (...any) -> Promise.Promise<any>,
+	Respond: (self: Channel, callback: RespondCallback) -> (),
+	Receive: (self: Channel, callback: Callback) -> Signal.Signal<...any>,
+	_received: Signal.Signal<...any>,
 	name: string,
 	config: Config,
-	queue: { TSend },
+	queue: { any },
 	lastSendTime: number,
-	Serialize: (Channel<TSend, TReceive, TRespond>, any) -> string,
-	Deserialize: (Channel<TSend, TReceive, TRespond>, any) -> any,
-	SendBatch: (Channel<TSend, TReceive, TRespond>) -> (),
+	Serialize: (self: Channel, data: any) -> string,
+	Deserialize: (self: Channel, data: any) -> any,
+	SendBatch: (self: Channel) -> (),
 }
 
 local DefaultConfig: Config = {
@@ -79,7 +67,9 @@ local DefaultConfig: Config = {
 	CompressThreshold = 256,
 }
 
-function Channel.new<TSend, TReceive, TRespond>(name: string, config: Config?): Channel<TSend, TReceive, TRespond>
+local channels: { [string]: Channel } = {}
+
+function Channel.new(name: string, config: Config?): Channel
 	local self = setmetatable({}, Channel)
 	self.name = name
 	self._received = Signal.new()
@@ -158,7 +148,8 @@ function Channel:Receive(callback: (...any) -> ())
 end
 
 function Channel:Serialize(data: any): string
-	local serialized = MessagePack.encode(data)
+	local serializedData = Http.serializeData(data)
+	local serialized = MessagePack.encode(serializedData)
 	if #MessagePack.encode(serialized) >= self.config.CompressThreshold then
 		serialized = "--" .. LibDeflate:CompressDeflate(serialized)
 	end
@@ -176,7 +167,7 @@ function Channel:Deserialize(data: any): any
 	end
 end
 
-function Network:Create<TSend, TReceive, TRespond>(name: string, config: Config?): Channel<TSend, TReceive, TRespond>
+function Network:Create(name: string, config: Config?): Channel
 	if not channels[name] then
 		channels[name] = Channel.new(name, config)
 	end

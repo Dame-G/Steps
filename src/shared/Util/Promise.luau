@@ -1,27 +1,14 @@
 --!strict
 
---[[
-    Promise.luau
-    A promise library for Roblox using Luau.
-    This library provides an implementation of promises, which allow for asynchronous programming and handling of async operations.
-    It includes the following types and functions:
-    - Promise: Represents a promise that can be resolved or rejected.
-    - PromiseStatus: Represents the status of a promise (Pending, Resolved, or Rejected).
-    - PromiseExecutor: Represents the executor function that is passed to the Promise constructor.
-    - PromiseThen: Represents the callback function for handling resolved promises.
-    - PromiseCatch: Represents the callback function for handling rejected promises.
-    The library also provides utility functions for creating resolved or rejected promises, waiting for promises to resolve, and handling multiple promises.
-]]
-
 type PromiseStatus = "Pending" | "Resolved" | "Rejected"
-type PromiseExecutor = (resolve: (value: any) -> (), reject: (reason: any) -> ()) -> ()
+type PromiseExecutor<T> = (resolve: (value: T) -> (), reject: (reason: any) -> ()) -> ()
 type PromiseThen<T> = (value: T) -> ()
 type PromiseCatch = (reason: any) -> ()
 
 export type Promise<T> = {
 	_status: PromiseStatus,
 	_value: T?,
-	_reason: any,
+	_reason: any?,
 	_thenCallbacks: { PromiseThen<T> },
 	_catchCallbacks: { PromiseCatch },
 	andThen: (self: Promise<T>, thenCallback: PromiseThen<T>) -> Promise<T>,
@@ -31,7 +18,7 @@ export type Promise<T> = {
 
 local Promise = {}
 
-function Promise.new<T>(executor: PromiseExecutor): Promise<T>
+function Promise.new<T>(executor: PromiseExecutor<T>): Promise<T>
 	local self: Promise<T> = {
 		_status = "Pending",
 		_value = nil,
@@ -43,13 +30,12 @@ function Promise.new<T>(executor: PromiseExecutor): Promise<T>
 		catch = Promise.catch,
 	}
 
-	local function resolve(...: any)
-		local data = { ... }
+	local function resolve(...: T)
 		if self._status == "Pending" then
 			self._status = "Resolved"
-			self._value = unpack(data)
+			self._value = ...
 			for _, callback in ipairs(self._thenCallbacks) do
-				callback(unpack(data))
+				callback(...)
 			end
 		end
 	end
@@ -64,13 +50,13 @@ function Promise.new<T>(executor: PromiseExecutor): Promise<T>
 		end
 	end
 
-	executor(resolve, reject)
+	task.spawn(executor, resolve, reject)
 
 	return self
 end
 
 function Promise.andThen<T>(self: Promise<T>, thenCallback: PromiseThen<T>): Promise<T>
-	if self._status == "Resolved" then
+	if self._status == "Resolved" and self._value then
 		thenCallback(self._value)
 	else
 		table.insert(self._thenCallbacks, thenCallback)
@@ -82,7 +68,7 @@ function Promise.await<T>(self: Promise<T>): ...T
 	while self._status == "Pending" do
 		task.wait()
 	end
-	if self._status == "Resolved" then
+	if self._status == "Resolved" and self._value then
 		return self._value
 	else
 		error(self._reason)
@@ -98,10 +84,9 @@ function Promise.catch<T>(self: Promise<T>, catchCallback: PromiseCatch): Promis
 	return self
 end
 
-function Promise.resolve<T>(...: any): Promise<T>
-	local data = { ... }
+function Promise.resolve<T>(value: T): Promise<T>
 	return Promise.new(function(resolve)
-		resolve(unpack(data))
+		resolve(value)
 	end)
 end
 
@@ -121,7 +106,7 @@ function Promise.all<T>(promises: { Promise<T> }): Promise<{ T }>
 		end
 		for i, promise in ipairs(promises) do
 			promise
-				:andThen(function(value: T)
+				:andThen(function(value)
 					results[i] = value
 					pending -= 1
 					if pending == 0 then

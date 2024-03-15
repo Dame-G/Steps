@@ -1,15 +1,5 @@
 --!strict
 
---[[
-    Luau Entity Component System (ECS) Module
-    This module provides an implementation of the Entity Component System architecture for Roblox games.
-    It includes the following classes:
-    - World: Represents the game world and manages entities and systems.
-    - Entity: Represents an entity in the game world, which can have multiple components.
-    - Component: Represents a component that can be attached to an entity.
-    - System: Represents a system that processes entities with specific components.
-]]
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Promise = require(ReplicatedStorage.Util.Promise)
 local Signal = require(ReplicatedStorage.Util.Signal)
@@ -18,8 +8,8 @@ export type Component<T> = {
 	Name: string,
 	Data: T,
 	Changed: Signal.Signal<{ any }, any>,
-	Set: (Component<T>, { any }, any) -> (),
-	Get: (Component<T>, { any }) -> any,
+	Set: (self: Component<T>, path: { any }, value: any) -> (),
+	Get: (self: Component<T>, path: { any }) -> any,
 }
 
 export type Entity = {
@@ -28,32 +18,32 @@ export type Entity = {
 	Reference: any,
 	ComponentAdded: Signal.Signal<Component<any>>,
 	ComponentRemoved: Signal.Signal<Component<any>>,
-	AddComponent: <T>(Entity, Component<T>) -> Component<T>,
-	RemoveComponent: (Entity, string) -> (),
-	GetComponent: <T>(Entity, string) -> Component<T>?,
-	HasComponent: (Entity, string) -> boolean,
-	SetActive: (Entity, boolean) -> (),
-	IsActive: (Entity) -> boolean,
+	AddComponent: <T>(self: Entity, component: Component<T>) -> Component<T>,
+	RemoveComponent: (self: Entity, name: string) -> (),
+	GetComponent: <T>(self: Entity, name: string) -> Component<T>?,
+	HasComponent: (self: Entity, name: string) -> boolean,
+	SetActive: (self: Entity, active: boolean) -> (),
+	IsActive: (self: Entity) -> boolean,
 }
 
 export type System<T...> = {
 	_entities: { { entity: Entity } },
-	_processFunc: (Entity, T...) -> (),
+	_processFunc: (entity: Entity, dt: number) -> (),
 	_dependencies: { string }?,
-	AddEntity: (System<T...>, Entity) -> (),
-	shouldAddEntity: (System<T...>, Entity) -> boolean,
-	RemoveEntity: (System<T...>, Entity) -> (),
-	Update: (System<T...>, T...) -> (),
+	AddEntity: (self: System<T...>, entity: Entity) -> (),
+	shouldAddEntity: (self: System<T...>, entity: Entity) -> boolean,
+	RemoveEntity: (self: System<T...>, entity: Entity) -> (),
+	Update: (self: System<T...>, dt: number) -> (),
 }
 
 export type World = {
 	_entities: { Entity },
 	_systems: { System<any> },
-	AddEntity: (World, Entity) -> (),
-	RemoveEntity: (World, Entity) -> (),
-	GetEntity: (World, (Entity) -> boolean) -> Entity?,
-	AddSystem: <T...>(World, System<T...>, { string }?) -> (),
-	Update: <T...>(World, T...) -> (),
+	AddEntity: (self: World, entity: Entity) -> (),
+	RemoveEntity: (self: World, entity: Entity) -> (),
+	GetEntity: (self: World, queryFunc: (Entity) -> boolean) -> Entity?,
+	AddSystem: <T...>(self: World, system: System<T...>) -> (),
+	Update: (self: World, dt: number) -> (),
 }
 
 local World = {}

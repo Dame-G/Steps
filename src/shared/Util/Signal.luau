@@ -1,15 +1,5 @@
 --!strict
 
---[[
-    Signal.luau
-    A signal library for Roblox using Luau.
-    This library provides a simple way to create and manage signals, which allow for event-driven programming.
-    It includes the following classes and types:
-    - Signal: Represents a signal that can be connected to and fired.
-    - Connection: Represents a connection to a signal, which can be disconnected.
-    The library also uses promises to provide a way to wait for a signal to be fired.
-]]
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Promise = require(ReplicatedStorage.Util.Promise)
 
@@ -22,11 +12,11 @@ type Connection<T...> = {
 }
 
 export type Signal<T...> = {
-	Connect: (Signal<T...>, (T...) -> ()) -> Connection<T...>,
-	DisconnectAll: (Signal<T...>) -> (),
-	Fire: (Signal<T...>, T...) -> (),
-	Wait: (Signal<T...>) -> (),
-	Once: (Signal<T...>, (T...) -> ()) -> Connection<T...>,
+	Connect: (self: Signal<T...>, (T...) -> ()) -> Connection<T...>,
+	DisconnectAll: (self: Signal<T...>) -> (),
+	Fire: (self: Signal<T...>, T...) -> (),
+	Wait: (self: Signal<T...>) -> (),
+	Once: (self: Signal<T...>, (T...) -> ()) -> Connection<T...>,
 }
 
 function Connection.new<T...>(signal: Signal<T...>, fn: (T...) -> ()): Connection<T...>
@@ -81,14 +71,15 @@ end
 function Signal:Fire<T...>(...: T...)
 	local item = self._handlerListHead
 	while item do
+		local next = item._next
 		if item._connected then
 			item._fn(...)
 		end
-		item = item._next
+		item = next
 	end
 end
 
-function Signal:Wait<T...>()
+function Signal:Wait<T...>(): T...
 	return Promise.new(function(resolve)
 		local connection
 		connection = self:Connect(function(...)
