@@ -1,0 +1,5 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MessagePack = require(ReplicatedStorage.Util.MessagePack)
+local LibDeflate = require(ReplicatedStorage.Util.LibDeflate)
+local Signal = require(ReplicatedStorage.Util.Signal)
+local Promise = require(ReplicatedStorage.Util.Promise)
