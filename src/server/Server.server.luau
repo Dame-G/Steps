@@ -7,6 +7,7 @@ local Network = require(ReplicatedStorage.Util.Network)
 local PlayerDataTemplate = require(script.Parent.Templates.PlayerData)
 
 local PlayerChannel = Network:Create("Player")
+local CharacterChannel = Network:Create("Character")
 
 local PlayerMemory = Memory.new(PlayerDataTemplate, {
 	MemoryName = "PlayerData",
@@ -32,22 +33,39 @@ end
 
 local PlayerAdded = function(player: Player)
 	local PlayerEntity = ECS.Entity.new(player)
-	local PlayerSave = PlayerEntity:AddComponent(ECS.Component.new("Player", PlayerDataTemplate))
+	local Player = PlayerEntity:AddComponent(ECS.Component.new("Player", PlayerDataTemplate))
 
 	PlayerMemory:LoadAsync(player.UserId):andThen(function(data) -- Load the player's data from memory
-		PlayerSave.Data = data
-		PlayerSave.Changed:Connect(function(path, value) -- Connect to changes in the player's data to the client
-			PlayerChannel:SendTo(player, PlayerSave.Data)
+		Player.Data = data
+		Player.Changed:Connect(function(path, value) -- Connect to changes in the player's data to the client
+			PlayerChannel:SendTo(player, Player.Data)
 		end)
 
 		World:AddEntity(PlayerEntity) -- Add the player's entity to the world
-		PlayerChannel:SendTo(player, PlayerSave.Data) -- Send the initial player data to the player
+		PlayerChannel:SendTo(player, Player.Data) -- Send the initial player data to the player
 	end)
 
 	player.AncestryChanged:Connect(function(_, parent) -- Connect AncestryChanged to player removal
 		if parent == nil then
 			PlayerRemoved(player)
 		end
+	end)
+
+	player.CharacterAdded:Connect(function(character)
+		local CharacterEntity = ECS.Entity.new(character)
+		local Character = CharacterEntity:AddComponent(ECS.Component.new("Character", {
+			WalkSpeed = {
+				Base = 16,
+				Current = 16,
+			},
+		}))
+
+		Character.Changed:Connect(function(path, value) -- Connect to changes in the character's data to the client
+			CharacterChannel:SendTo(player, Character.Data)
+		end)
+
+		World:AddEntity(CharacterEntity) -- Add the character's entity to the world
+		CharacterChannel:SendTo(player, Character.Data) -- Send the initial character data to the player
 	end)
 end
 game.Players.PlayerAdded:Connect(PlayerAdded) -- Connect to the player added event
