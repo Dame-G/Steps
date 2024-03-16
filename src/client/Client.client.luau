@@ -5,7 +5,7 @@ local Network = require(ReplicatedStorage.Util.Network)
 
 local PlayerChannel = Network:Create("Player")
 
-PlayerChannel:Receive(function(data)
-	print(data)
+PlayerChannel:Receive(function(...)
+	print(...)
 	return
 end)

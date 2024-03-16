@@ -4,7 +4,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local Promise = require(ReplicatedStorage.Util.Promise)
 local Signal = require(ReplicatedStorage.Util.Signal)
-local Base85 = require(ReplicatedStorage.Util.Base85)
 local MessagePack = require(ReplicatedStorage.Util.MessagePack)
 
 type Config = {
@@ -27,10 +26,10 @@ type Entry<T> = {
 type Memory<T> = {
 	_dataStore: DataStore,
 	new: (template: T, config: Config?) -> Memory<T>,
-	SaveAsync: (self: Memory<T>, key: string) -> Promise.Promise<boolean>,
-	LoadAsync: (self: Memory<T>, key: string) -> Promise.Promise<T>,
-	Get: (self: Memory<T>, key: string) -> Entry<T>,
-	Release: (self: Memory<T>, key: string) -> (),
+	SaveAsync: (self: Memory<T>, key: string | number) -> Promise.Promise<boolean>,
+	LoadAsync: (self: Memory<T>, key: string | number) -> Promise.Promise<T>,
+	Get: (self: Memory<T>, key: string | number) -> Entry<T>,
+	Release: (self: Memory<T>, key: string | number) -> (),
 	_migrate: (self: Memory<T>, data: T) -> (),
 	migrate: (self: Memory<T>, data: T) -> (),
 	reconcile: (self: Memory<T>, data: T) -> (),
@@ -60,16 +59,25 @@ function Memory.new<T>(template: T, config: Config?): Memory<T>
 	local self = setmetatable({
 		_config = _config,
 		_entries = {},
-		_template = template,
+		_template = typeof(template) == "table" and table.clone(template) or template,
 	}, Memory)
 
 	if self._config.Mock then
-		self._dataStore = DataStoreService:GetDataStore(_config.MemoryName, tostring(tick()))
+		self._dataStore =
+			DataStoreService:GetDataStore(_config.MemoryName .. self._config.Version :: number, tostring(tick()))
 	else
-		self._dataStore = DataStoreService:GetDataStore(_config.MemoryName)
+		self._dataStore = DataStoreService:GetDataStore(_config.MemoryName .. self._config.Version :: number)
 	end
 
 	task.spawn(self._startAutoSave, self)
+	game:BindToClose(function()
+		for key, entry in pairs(self._entries) do
+			task.spawn(function()
+				self:SaveAsync(key):await()
+				entry:Release()
+			end)
+		end
+	end)
 
 	return self
 end
@@ -85,7 +93,8 @@ function Memory:_startAutoSave()
 	end
 end
 
-function Memory:SaveAsync(key: string): Promise.Promise<boolean>
+function Memory:SaveAsync(key: string | number): Promise.Promise<boolean>
+	key = tostring(key)
 	local entry = self._entries[key]
 
 	if entry and entry.Active then
@@ -94,7 +103,7 @@ function Memory:SaveAsync(key: string): Promise.Promise<boolean>
 			local encoded = false
 
 			if #MessagePack.encode(data) > self._config.CompressThreshold :: number then
-				data = "--" .. Base85.encode(MessagePack.encode(data))
+				data = "--" .. MessagePack.utf8Encode(MessagePack.encode(data))
 				encoded = true
 			end
 
@@ -114,7 +123,8 @@ function Memory:SaveAsync(key: string): Promise.Promise<boolean>
 	return Promise.reject("Entry not loaded")
 end
 
-function Memory:LoadAsync<T>(key: string): Promise.Promise<any>
+function Memory:LoadAsync<T>(key: string | number): Promise.Promise<any>
+	key = tostring(key)
 	local entry = self:Get(key)
 
 	return Promise.new(function(resolve, reject)
@@ -132,7 +142,7 @@ function Memory:LoadAsync<T>(key: string): Promise.Promise<any>
 		if success then
 			data = data or {}
 			if type(data) == "string" and data:sub(1, 2) == "--" then
-				data = MessagePack.decode(Base85.decode(data:sub(3)))
+				data = MessagePack.decode(MessagePack.utf8Decode(data:sub(3)))
 			end
 
 			self:_migrate(data)
@@ -168,7 +178,8 @@ function Entry:Release()
 	self.Saved:DisconnectAll()
 end
 
-function Memory:Get<T>(key: string): Entry<T>
+function Memory:Get<T>(key: string | number): Entry<T>
+	key = tostring(key)
 	local entry = self._entries[key]
 
 	if not entry then
@@ -180,6 +191,7 @@ function Memory:Get<T>(key: string): Entry<T>
 end
 
 function Memory:Release(key: string | number)
+	key = tostring(key)
 	local entry = self._entries[key]
 	if entry then
 		self:SaveAsync(key):await()

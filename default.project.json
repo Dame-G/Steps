@@ -8,19 +8,17 @@
 		},
 
 		"ServerScriptService": {
-			"Server": {
-				"$path": "src/server"
-			}
+			"$path": "src/server"
 		},
 
 		"StarterPlayer": {
 			"StarterPlayerScripts": {
-				"Client": {
-					"$path": "src/client"
-				}
+				"$path": "src/client"
 			}
 		},
-
+		"ServerStorage": {
+			"$path": "src/assets"
+		},
 		"Workspace": {
 			"$properties": {
 				"FilteringEnabled": true

@@ -103,7 +103,7 @@ Component.__index = Component
 function Component.new<T>(name: string, data: T?): Component<T>
 	return setmetatable({
 		Name = name,
-		Data = data or {} :: T,
+		Data = data and table.clone(data) or {} :: T,
 		Changed = Signal.new(),
 	}, Component)
 end
