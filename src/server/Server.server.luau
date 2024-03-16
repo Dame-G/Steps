@@ -4,22 +4,45 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ECS = require(ReplicatedStorage.Util.ECS)
 local Memory = require(ReplicatedStorage.Util.Memory)
 local Network = require(ReplicatedStorage.Util.Network)
-local PlayerDataTemplate = require(script.Parent.Templates.PlayerData)
+local PlayerTemplate = require(ReplicatedStorage.Templates.Player)
+local CharacterTemplate = require(ReplicatedStorage.Templates.Character)
+local WorldTemplate = require(ReplicatedStorage.Templates.World)
 
 local PlayerChannel = Network:Create("Player")
 local CharacterChannel = Network:Create("Character")
 
-local PlayerMemory = Memory.new(PlayerDataTemplate, {
-	MemoryName = "PlayerData",
-	Version = 21,
-})
+local PlayerMemory = Memory.new(PlayerTemplate, { MemoryName = "Player", Version = 1 })
 
-local World = ECS.World.new()
-local PlayerSystem = ECS.System.new(function(entity, dt)
-	local PlayerSave = entity:GetComponent("Player")
-	assert(PlayerSave, "PlayerSystem requires PlayerComponent")
-	PlayerSave:Set({ "TimePlayed" }, PlayerSave:Get({ "TimePlayed" }) + dt) -- Update the player's time played
+local World = ECS.World.new(WorldTemplate)
+local PlayerSystem = ECS.System.new(function(entity, components, tick, config)
+	local Player = components.Player
+	Player:Set({ "TimePlayed" }, Player.Data.TimePlayed + 1)
+	PlayerChannel:SendTo(entity.Reference, Player.Data)
 end, { "Player" })
+local CharacterSystem = ECS.System.new(function(entity, components, tick, config)
+	local Character = components.Character
+	CharacterChannel:SendTo(entity.Reference, Character.Data)
+end, { "Character" })
+
+World:AddSystem(PlayerSystem)
+World:AddSystem(CharacterSystem)
+
+local CharacterAdded = function(player, character)
+	local CharacterEntity = ECS.Entity.new(character)
+	local Character = CharacterEntity:AddComponent(ECS.Component.new("Character", CharacterTemplate))
+
+	World:AddEntity(CharacterEntity)
+	CharacterChannel:SendTo(player, Character.Data)
+end
+
+local CharacterRemoved = function(character)
+	local CharacterEntity = World:GetEntity(function(entity)
+		return entity.Reference == character
+	end)
+	if CharacterEntity then
+		World:RemoveEntity(CharacterEntity)
+	end
+end
 
 local PlayerRemoved = function(player)
 	local PlayerEntity = World:GetEntity(function(entity)
@@ -28,54 +51,41 @@ local PlayerRemoved = function(player)
 	if PlayerEntity then
 		World:RemoveEntity(PlayerEntity)
 	end
-	PlayerMemory:Release(player.UserId) -- Release the player's memory (session lock and save)
+	PlayerMemory:Release(player.UserId)
 end
 
 local PlayerAdded = function(player: Player)
 	local PlayerEntity = ECS.Entity.new(player)
-	local Player = PlayerEntity:AddComponent(ECS.Component.new("Player", PlayerDataTemplate))
+	local Player = PlayerEntity:AddComponent(ECS.Component.new("Player", PlayerTemplate))
 
-	PlayerMemory:LoadAsync(player.UserId):andThen(function(data) -- Load the player's data from memory
+	PlayerMemory:LoadAsync(player.UserId):andThen(function(data)
 		Player.Data = data
-		Player.Changed:Connect(function(path, value) -- Connect to changes in the player's data to the client
-			PlayerChannel:SendTo(player, Player.Data)
-		end)
-
-		World:AddEntity(PlayerEntity) -- Add the player's entity to the world
-		PlayerChannel:SendTo(player, Player.Data) -- Send the initial player data to the player
+		World:AddEntity(PlayerEntity)
+		PlayerChannel:SendTo(player, Player.Data)
 	end)
 
-	player.AncestryChanged:Connect(function(_, parent) -- Connect AncestryChanged to player removal
+	player.CharacterAdded:Connect(function(character)
+		CharacterAdded(player, character)
+
+		character.AncestryChanged:Connect(function(_, parent)
+			if parent == nil then
+				CharacterRemoved(character)
+			end
+		end)
+	end)
+
+	player.AncestryChanged:Connect(function(_, parent)
 		if parent == nil then
 			PlayerRemoved(player)
 		end
 	end)
-
-	player.CharacterAdded:Connect(function(character)
-		local CharacterEntity = ECS.Entity.new(character)
-		local Character = CharacterEntity:AddComponent(ECS.Component.new("Character", {
-			WalkSpeed = {
-				Base = 16,
-				Current = 16,
-			},
-		}))
-
-		Character.Changed:Connect(function(path, value) -- Connect to changes in the character's data to the client
-			CharacterChannel:SendTo(player, Character.Data)
-		end)
-
-		World:AddEntity(CharacterEntity) -- Add the character's entity to the world
-		CharacterChannel:SendTo(player, Character.Data) -- Send the initial character data to the player
-	end)
 end
-game.Players.PlayerAdded:Connect(PlayerAdded) -- Connect to the player added event
-for _, player in pairs(game.Players:GetPlayers()) do -- Handle existing players
+
+game.Players.PlayerAdded:Connect(PlayerAdded)
+for _, player in pairs(game.Players:GetPlayers()) do
 	PlayerAdded(player)
 end
 
-World:AddSystem(PlayerSystem) -- Add the player system to the world
-
-while true do -- Update the world every 0.5 seconds
-	World:Update(1)
-	task.wait(0.5)
+while true do
+	World:Update()
 end

@@ -15,7 +15,7 @@ export type Signal<T...> = {
 	Connect: (self: Signal<T...>, (T...) -> ()) -> Connection<T...>,
 	DisconnectAll: (self: Signal<T...>) -> (),
 	Fire: (self: Signal<T...>, T...) -> (),
-	Wait: (self: Signal<T...>) -> (),
+	Wait: (self: Signal<T...>, timeout: number?) -> (),
 	Once: (self: Signal<T...>, (T...) -> ()) -> Connection<T...>,
 }
 
@@ -79,13 +79,23 @@ function Signal:Fire<T...>(...: T...)
 	end
 end
 
-function Signal:Wait<T...>(): T...
-	return Promise.new(function(resolve)
+function Signal:Wait<T...>(timeout: number?): T...
+	return Promise.new(function(resolve, reject)
 		local connection
+		local timeoutId
 		connection = self:Connect(function(...)
 			connection:Disconnect()
+			if timeoutId then
+				task.cancel(timeoutId)
+			end
 			resolve(...)
 		end)
+		if timeout then
+			timeoutId = task.delay(timeout, function()
+				connection:Disconnect()
+				reject("Signal wait timed out after " .. timeout .. " seconds")
+			end)
+		end
 	end):await()
 end
 

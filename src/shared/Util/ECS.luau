@@ -13,7 +13,6 @@ export type Component<T> = {
 }
 
 export type Entity = {
-	_components: { [string]: Component<any> },
 	Active: boolean,
 	Reference: any,
 	ComponentAdded: Signal.Signal<Component<any>>,
@@ -27,37 +26,45 @@ export type Entity = {
 }
 
 export type System<T...> = {
-	_entities: { { entity: Entity } },
-	_processFunc: (entity: Entity, dt: number) -> (),
-	_dependencies: { string }?,
 	AddEntity: (self: System<T...>, entity: Entity) -> (),
 	shouldAddEntity: (self: System<T...>, entity: Entity) -> boolean,
 	RemoveEntity: (self: System<T...>, entity: Entity) -> (),
-	Update: (self: System<T...>, dt: number) -> (),
+	Update: (self: System<T...>, tick: number, config: WorldConfig?) -> (),
 }
 
+type WorldConfig = {
+	Speed: number?,
+}
+
+local DEFAULT_CONFIG: WorldConfig = {
+	Speed = 1,
+}
 export type World = {
-	_entities: { Entity },
-	_systems: { System<any> },
 	AddEntity: (self: World, entity: Entity) -> (),
 	RemoveEntity: (self: World, entity: Entity) -> (),
 	GetEntity: (self: World, queryFunc: (Entity) -> boolean) -> Entity?,
 	AddSystem: <T...>(self: World, system: System<T...>) -> (),
-	Update: (self: World, dt: number) -> (),
+	Update: (self: World) -> (),
 }
 
 local World = {}
 World.__index = World
 
-function World.new(): World
-	return setmetatable({ _entities = {}, _systems = {} }, World)
+function World.new(config: WorldConfig?): World
+	local _config = config and table.clone(config) or DEFAULT_CONFIG
+	for key, value in pairs(DEFAULT_CONFIG) do
+		if not _config[key] then
+			_config[key] = value
+		end
+	end
+	return setmetatable({ _entities = {}, _systems = {}, _tick = 0, _config = _config }, World)
 end
 
 function World:AddEntity(entity: Entity)
 	table.insert(self._entities, entity)
 	for _, system in ipairs(self._systems) do
-		for _, component in pairs(entity._components) do
-			system:AddEntity(entity, component)
+		if system:shouldAddEntity(entity) then
+			system:AddEntity(entity)
 		end
 	end
 end
@@ -92,10 +99,12 @@ function World:AddSystem<T>(system: System<T>)
 	end
 end
 
-function World:Update(dt: number)
+function World:Update()
 	for _, system in ipairs(self._systems) do
-		system:Update(dt)
+		system:Update(self._tick, self._config)
 	end
+	self._tick += 1
+	task.wait(self._config.Speed)
 end
 
 local Component = {}
@@ -116,6 +125,11 @@ function Component:Set(path: { any }, value: any)
 			data[key] = {}
 		end
 		data = data[key]
+	end
+	if lastKey == nil then
+		self.Data = value
+		self.Changed:Fire(path, value)
+		return
 	end
 	data[lastKey] = value
 	path[#path + 1] = lastKey
@@ -147,10 +161,9 @@ function Entity.new(reference: any): Entity
 end
 
 function Entity:AddComponent<T>(component: Component<T>): Component<T>
-	local newComponent = Component.new(component.Name, table.clone(component.Data))
-	self._components[newComponent.Name] = newComponent
-	self.ComponentAdded:Fire(newComponent)
-	return newComponent
+	self._components[component.Name] = component
+	self.ComponentAdded:Fire(component)
+	return component
 end
 
 function Entity:RemoveComponent(name: string)
@@ -180,7 +193,10 @@ end
 local System = {}
 System.__index = System
 
-function System.new<T>(processFunc: (Entity, number) -> (), dependencies: { string }?): System<T>
+function System.new<T>(
+	processFunc: (Entity, { [string]: Component<any> }, number, WorldConfig?) -> (),
+	dependencies: { string }?
+): System<T>
 	return setmetatable({
 		_entities = {},
 		_processFunc = processFunc,
@@ -210,12 +226,16 @@ function System:RemoveEntity(entity: Entity)
 	end
 end
 
-function System:Update(dt: number)
+function System:Update(tick: number, config: WorldConfig?)
 	for _, pair in ipairs(self._entities) do
 		local entity = pair.entity
 		if entity:IsActive() then
 			Promise.try(function()
-				return self._processFunc(entity, dt)
+				local components = {}
+				for _, componentName in ipairs(self._dependencies) do
+					components[componentName] = entity:GetComponent(componentName) :: Component<any>
+				end
+				return self._processFunc(entity, components, tick, config)
 			end)
 		end
 	end
