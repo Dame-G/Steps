@@ -41,10 +41,9 @@ local PlayerMemory = Memory.new(MemoryTemplate, {
 local World = ECS.World.new()
 local PlayerSystem = ECS.System.new(function(entity, dt)
 	local component = entity:GetComponent("Player")
-	if not component then
-		return
-	end
-	component:Set({ "Level" }, component:Get({ "Level" }) + 1)
+	assert(component)
+
+	component:Set({ "Level" }, component:Get({ "Level" }) + dt)
 end, { "Player" })
 World:AddSystem(PlayerSystem)
 
@@ -57,7 +56,6 @@ local PlayerRemoved = function(player)
 	if playerEntity then
 		World:RemoveEntity(playerEntity)
 	end
-	print(PlayerMemory:SaveAsync(tostring(player.UserId)):await())
 	PlayerMemory:Release(tostring(player.UserId))
 end
 local PlayerAdded = function(player: Player)
@@ -93,5 +91,5 @@ end
 
 while true do
 	World:Update(1)
-	task.wait(0.5)
+	task.wait(0.6)
 end

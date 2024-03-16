@@ -13,42 +13,32 @@ local function isAllowedType(valueType)
 end
 
 local function hasAllowedTags(tags)
-	if #tags == 0 then
-		return true
-	elseif #tags == 1 and tags[1] == "readonly" then
-		return true
-	else
-		return false
-	end
+	return #tags == 0 or (#tags == 1 and tags[1] == "readonly")
 end
--- Make an HTTP request to fetch the API data
-local apiData = nil
 
-if game:GetService("RunService"):IsServer() then
-	apiData = HttpService:JSONDecode(HttpService:GetAsync("https://anaminus.github.io/rbx/json/api/latest.json"))
-end
+local apiData = game:GetService("RunService"):IsServer()
+	and HttpService:JSONDecode(HttpService:GetAsync("https://anaminus.github.io/rbx/json/api/latest.json"))
 
 local function getInstanceProperties(className)
 	local properties = {}
+
 	for _, class in ipairs(apiData) do
-		if class.type == "Class" and class.Name == className and class.Name ~= "Workspace" then
-			-- Found the class, now iterate through its members
+		if class.type == "Class" and class.Name == className then
 			for _, member in ipairs(apiData) do
-				-- Check if the member belongs to the class and is a property
-				if member.Class == className and member.type == "Property" then
-					-- Check if the property has an allowed type value and allowed tags
-					if isAllowedType(member.ValueType) and hasAllowedTags(member.tags) then
-						-- Add the property to the list
-						table.insert(properties, {
-							Name = member.Name,
-							ValueType = member.ValueType,
-							Tags = member.tags,
-						})
-					end
+				if
+					member.Class == className
+					and member.type == "Property"
+					and isAllowedType(member.ValueType)
+					and hasAllowedTags(member.tags)
+				then
+					table.insert(properties, {
+						Name = member.Name,
+						ValueType = member.ValueType,
+						Tags = member.tags,
+					})
 				end
 			end
 
-			-- Recursively get properties from the superclass
 			if class.Superclass then
 				local inheritedProperties = getInstanceProperties(class.Superclass)
 				for _, inheritedProperty in ipairs(inheritedProperties) do
@@ -104,4 +94,5 @@ end
 local Http = {}
 Http.getInstanceProperties = getInstanceProperties
 Http.serializeData = serializeData
+
 return Http

@@ -4,7 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataStoreService = game:GetService("DataStoreService")
 local Promise = require(ReplicatedStorage.Util.Promise)
 local Signal = require(ReplicatedStorage.Util.Signal)
-local Base64 = require(ReplicatedStorage.Util.Base64)
+local Base85 = require(ReplicatedStorage.Util.Base85)
 local MessagePack = require(ReplicatedStorage.Util.MessagePack)
 
 type Config = {
@@ -20,24 +20,17 @@ type Entry<T> = {
 	Data: T,
 	Active: boolean,
 	Locked: boolean,
-	LastSaveTime: number,
 	Loaded: Signal.Signal<T>,
 	Saved: Signal.Signal<boolean>,
 }
 
 type Memory<T> = {
-	_config: Config,
-	_entries: { [string]: Entry<T> },
-	_template: T,
 	_dataStore: DataStore,
-	_autoSaveInterval: number,
-	_autoSaveLoop: thread,
 	new: (template: T, config: Config?) -> Memory<T>,
 	SaveAsync: (self: Memory<T>, key: string) -> Promise.Promise<boolean>,
 	LoadAsync: (self: Memory<T>, key: string) -> Promise.Promise<T>,
 	Get: (self: Memory<T>, key: string) -> Entry<T>,
 	Release: (self: Memory<T>, key: string) -> (),
-	AutoSave: (self: Memory<T>, interval: number?) -> (),
 	_migrate: (self: Memory<T>, data: T) -> (),
 	migrate: (self: Memory<T>, data: T) -> (),
 	reconcile: (self: Memory<T>, data: T) -> (),
@@ -48,7 +41,7 @@ local DEFAULT_CONFIG: Config = {
 	Version = 1,
 	Mock = false,
 	CompressThreshold = 256,
-	AutoSaveInterval = 15,
+	AutoSaveInterval = 1,
 }
 
 local Memory = {}
@@ -76,9 +69,20 @@ function Memory.new<T>(template: T, config: Config?): Memory<T>
 		self._dataStore = DataStoreService:GetDataStore(_config.MemoryName)
 	end
 
-	self:AutoSave()
+	task.spawn(self._startAutoSave, self)
 
 	return self
+end
+
+function Memory:_startAutoSave()
+	while true do
+		for _, entry in pairs(self._entries) do
+			if entry.Active then
+				self:SaveAsync(entry.Key)
+			end
+		end
+		task.wait(self._config.AutoSaveInterval)
+	end
 end
 
 function Memory:SaveAsync(key: string): Promise.Promise<boolean>
@@ -90,7 +94,7 @@ function Memory:SaveAsync(key: string): Promise.Promise<boolean>
 			local encoded = false
 
 			if #MessagePack.encode(data) > self._config.CompressThreshold :: number then
-				data = "--" .. Base64.encode(MessagePack.encode(data))
+				data = "--" .. Base85.encode(MessagePack.encode(data))
 				encoded = true
 			end
 
@@ -99,7 +103,6 @@ function Memory:SaveAsync(key: string): Promise.Promise<boolean>
 			end)
 
 			if success then
-				entry.LastSaveTime = os.clock()
 				entry.Saved:Fire(encoded)
 				resolve(encoded)
 			else
@@ -111,7 +114,7 @@ function Memory:SaveAsync(key: string): Promise.Promise<boolean>
 	return Promise.reject("Entry not loaded")
 end
 
-function Memory:LoadAsync<T>(key: string): Promise.Promise<T>
+function Memory:LoadAsync<T>(key: string): Promise.Promise<any>
 	local entry = self:Get(key)
 
 	return Promise.new(function(resolve, reject)
@@ -129,13 +132,14 @@ function Memory:LoadAsync<T>(key: string): Promise.Promise<T>
 		if success then
 			data = data or {}
 			if type(data) == "string" and data:sub(1, 2) == "--" then
-				data = MessagePack.decode(Base64.decode(data:sub(3)))
+				data = MessagePack.decode(Base85.decode(data:sub(3)))
 			end
 
 			self:_migrate(data)
 			entry.Data = data
 			entry.Active = true
 			entry.Loaded:Fire(data)
+
 			resolve(data)
 		else
 			entry.Locked = false
@@ -153,7 +157,6 @@ function Entry.new(key, template)
 		Data = template,
 		Active = false,
 		Locked = false,
-		LastSaveTime = 0,
 		Loaded = Signal.new(),
 		Saved = Signal.new(),
 	}, Entry)
@@ -204,26 +207,10 @@ function Memory:Unlock(key: string): boolean
 	return false
 end
 
-function Memory:AutoSave(interval: number?)
-	self._autoSaveInterval = interval or self._config.AutoSaveInterval
-	self._autoSaveLoop = task.defer(function()
-		while true do
-			local savePromises = {}
-			for key, entry in pairs(self._entries) do
-				if entry.Active then
-					table.insert(savePromises, self:SaveAsync(key))
-				end
-			end
-			Promise.all(savePromises :: { Promise.Promise<boolean> }):await()
-			task.wait(self._autoSaveInterval)
-		end
-	end)
-end
-
 function Memory:_migrate(data)
-	if data.version ~= self._config.Version then
+	if data.Version ~= self._config.Version then
 		self:migrate(data)
-		data.version = self._config.Version
+		data.Version = self._config.Version
 	end
 	self:reconcile(data)
 end
