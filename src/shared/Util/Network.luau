@@ -48,7 +48,7 @@ type Config = {
 	Type: "UDP" | "TCP"?,
 }
 
-type Callback = (...any) -> any
+type Callback = (...any) -> ()
 type RespondCallback = (player: Player, ...any) -> any
 
 type Channel = {
@@ -203,9 +203,7 @@ else
 		local channel = channels[name]
 		if channel then
 			local deserializedData = channel:Deserialize(data)
-			for _, item in ipairs(deserializedData) do
-				(channel._received :: any):Fire(item)
-			end
+			channel._received:Fire(unpack(deserializedData))
 		end
 	end
 	remoteEvent.OnClientEvent:Connect(clientEvent)

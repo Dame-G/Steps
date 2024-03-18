@@ -1,58 +1,36 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ReplicatedStorage = game.ReplicatedStorage
 local ECS = require(ReplicatedStorage.Util.ECS)
 local Network = require(ReplicatedStorage.Util.Network)
-local WorldTemplate = require(ReplicatedStorage.Templates.World)
-
-local PlayerChannel = Network:Create("Player")
-local CharacterChannel = Network:Create("Character")
-
-local World = ECS.World.new(WorldTemplate)
-local PlayerEntity, CharacterEntity, Player, Character
-
-local PlayerSystem = ECS.System.new(function(entity, components, tick, config)
-	print(components.Player.Data.TimePlayed)
-end, { "Player" })
-local CharacterSystem = ECS.System.new(function(entity, components, tick, config)
-	--	print(entity)
-end, { "Character" })
-
-World:AddSystem(PlayerSystem)
-World:AddSystem(CharacterSystem)
-
-PlayerChannel:Receive(function(data)
-	if
-		not World:GetEntity(function(entity)
-			return entity.Reference == game.Players.LocalPlayer
-		end) and not Player
-	then
-		PlayerEntity = ECS.Entity.new(game.Players.LocalPlayer)
-		Player = ECS.Component.new("Player", data)
-		PlayerEntity:AddComponent(Player)
-		World:AddEntity(PlayerEntity)
-	else
-		Player:Set({}, data)
-	end
-	return
+local PlayerTemplate = require(ReplicatedStorage.Templates.Player)
+local PlayerComponent = ECS.Component(function()
+	return table.clone(PlayerTemplate)
 end)
 
-CharacterChannel:Receive(function(data)
-	if
-		not World:GetEntity(function(entity)
-			return entity.Reference == game.Players.LocalPlayer.Character
-		end) and not Character
-	then
-		CharacterEntity = ECS.Entity.new(game.Players.LocalPlayer.Character)
-		Character = ECS.Component.new("Character", data)
-		CharacterEntity:AddComponent(Character)
-		World:AddEntity(CharacterEntity)
-	else
-		Character:Set({}, data)
+local Alive = ECS.Tag()
+local World = ECS.World()
+local PlayerEntity = World:Create()
+World:Add(PlayerEntity, PlayerComponent)
+
+local Channel = Network:Create("Player")
+
+Channel:Receive(function(data, alive)
+	World:Set(PlayerEntity, PlayerComponent, data)
+	if alive and not World:Has(PlayerEntity, Alive) then
+		World:Add(PlayerEntity, Alive)
+	elseif not alive and World:Has(PlayerEntity, Alive) then
+		World:Remove(PlayerEntity, Alive)
 	end
-	return
 end)
 
-while true do
-	World:Update()
+local UpdatePlayer = function(dt)
+	for entity, player in World:View(PlayerComponent):Get() do
+		if World:Has(PlayerEntity, Alive) then
+		end
+	end
 end
+
+game:GetService("RunService").RenderStepped:Connect(function(dt)
+	UpdatePlayer(dt)
+end)
