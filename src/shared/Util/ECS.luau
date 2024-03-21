@@ -111,13 +111,14 @@ export type World = {
 
 	has_none: (self: World, id: entity) -> boolean,
 	Add: <T...>(self: World, id: entity, T...) -> (),
+	Append: <T>(self: World, id: entity, ctype: T, value: T) -> (),
 	Set: <T>(self: World, id: entity, ctype: T, value: T) -> (),
 	Patch: <T>(self: World, id: entity, ctype: T, Patcher: (T) -> T) -> (),
 	Has: <T...>(self: World, id: entity, T...) -> boolean,
 	Get: <T...>(self: World, id: entity, T...) -> T...,
 	TryGet: <T>(self: World, id: entity, T) -> T?,
 	Remove: <T...>(self: World, id: entity, T...) -> (),
-	Find: <T>(self: World, ctype: T, value: T) -> entity?,
+	Find: <T>(self: World, ctype: T, properties: { [string]: any }) -> entity?,
 
 	View: <T...>(self: World, T...) -> View<T...>,
 	Track: <T...>(self: World, T...) -> Observer<T...>,
@@ -1652,6 +1653,29 @@ local function World_create(): World
 		entity_pool_Remove(entity_pool, id)
 	end
 
+	function World.Find<T>(self: World, ctype: T, properties: { [string]: any }): entity?
+		local pool = GET_POOL(ctype)
+
+		for i = 0, pool.size - 1 do
+			local id = BUFFER_GET(pool.entities, i)
+			local value = ARRAY_GET(pool.values, i)
+
+			local match = true
+			for k, v in pairs(properties) do
+				if value[k] ~= v then
+					match = false
+					break
+				end
+			end
+
+			if match then
+				return id
+			end
+		end
+
+		return nil
+	end
+
 	function World.Contains(self: World, id: entity): boolean
 		return ENTITY_POOL_HAS(entity_pool, id)
 	end
@@ -1697,7 +1721,54 @@ local function World_create(): World
 			end
 		end
 	end
+	function World.Append<T>(self: World, id: entity, ctype: T, data: {})
+		ASSERT(type(data) == "table", "data must be a table")
 
+		local pool = GET_POOL(ctype)
+
+		local key = ID_KEY(id)
+		POOL_CHECK_MAP_SIZE(pool, key)
+		local idx_ver = BUFFER_GET(pool.map, key)
+
+		if idx_ver ~= ID_NULL then
+			ID_ASSERT_VERSION_EQUAL(idx_ver, id)
+			local idx = ID_KEY(idx_ver)
+			local value = ARRAY_GET(pool.values, idx)
+
+			ASSERT(type(value) == "table", "existing component value must be a table")
+
+			for k, v in pairs(data) do
+				if type(v) == "table" and type(value[k]) == "table" then
+					for _, element in ipairs(v) do
+						table.insert(value[k], element)
+					end
+				else
+					value[k] = v
+				end
+			end
+
+			if pool.onChange then
+				fire(pool.onChange, id, value)
+			end
+		else
+			ASSERT_VALID_ENTITY(id)
+			ASSERT(ctype_ctors[ctype] ~= true, "cannot Append to a tag component")
+
+			local ctor = ctype_ctors[ctype]
+			if ctor == false then
+				throw(`entity does not have Component and no constructor for {ctype_debug(ctype)}`)
+			end
+
+			local value = (ctor :: () -> T)()
+			ASSERT(type(value) == "table", "component constructor must return a table")
+
+			for k, v in pairs(data) do
+				value[k] = v
+			end
+
+			POOL_ADD(pool, id, value)
+		end
+	end
 	function World.Set<T>(self: World, id: entity, ctype: T, value: T)
 		local pool = GET_POOL(ctype)
 
@@ -1830,20 +1901,6 @@ local function World_create(): World
 				pool_Clear(pool)
 			end
 			entity_pool_Clear(entity_pool)
-		end
-	end
-
-	function World.Find<T>(self: World, ctype: T, value: T): entity?
-		local pool = GET_POOL(ctype)
-
-		if value == nil then
-			if pool.size == 0 then
-				return nil
-			end
-			return BUFFER_GET(pool.entities, 0)
-		else
-			local arr_idx = table.find(pool.values, value)
-			return arr_idx and BUFFER_GET(pool.entities, arr_idx - 1)
 		end
 	end
 

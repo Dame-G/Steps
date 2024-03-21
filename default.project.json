@@ -14,6 +14,9 @@
 		"StarterPlayer": {
 			"StarterPlayerScripts": {
 				"$path": "src/client"
+			},
+			"$properties": {
+				"LoadCharacterAppearance": false
 			}
 		},
 		"ServerStorage": {
@@ -35,7 +38,10 @@
 			}
 		},
 		"Players": {
-			"$className": "Players"
+			"$className": "Players",
+			"$properties": {
+				"CharacterAutoLoads": false
+			}
 		},
 		"Lighting": {
 			"$properties": {

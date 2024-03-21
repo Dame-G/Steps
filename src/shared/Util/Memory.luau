@@ -123,7 +123,7 @@ function Memory:SaveAsync(key: string | number): Promise.Promise<boolean>
 	return Promise.reject("Entry not loaded")
 end
 
-function Memory:LoadAsync<T>(key: string | number): Promise.Promise<any>
+function Memory:LoadAsync<T>(key: string | number, active: boolean?): Promise.Promise<any>
 	key = tostring(key)
 	local entry = self:Get(key)
 
@@ -147,7 +147,7 @@ function Memory:LoadAsync<T>(key: string | number): Promise.Promise<any>
 
 			self:_migrate(data)
 			entry.Data = data
-			entry.Active = true
+			entry.Active = active or true
 			entry.Loaded:Fire(data)
 
 			resolve(data)
@@ -194,7 +194,9 @@ function Memory:Release(key: string | number)
 	key = tostring(key)
 	local entry = self._entries[key]
 	if entry then
-		self:SaveAsync(key):await()
+		if entry.Active then
+			self:SaveAsync(key):await()
+		end
 		entry:Release()
 		entry.Locked = false
 		self._entries[key] = nil
