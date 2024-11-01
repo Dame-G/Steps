@@ -10,4 +10,5 @@ return {
 	UserId = 0,
 	TimePlayed = 0,
 	Characters = {},
-}
+	MaxNumberOfCharacters = 5,
+} :: Player

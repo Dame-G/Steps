@@ -1,16 +1,41 @@
+local HttpService = game:GetService("HttpService")
+
+local Item = require(script.Parent.Item)
+
+export type Character = {
+	Level: number,
+	Lives: number,
+	Location: {
+		X: number,
+		Y: number,
+		Z: number,
+		Area: string,
+	},
+	Stats: { [string]: number },
+	Quests: { [string]: { boolean } },
+	Inventory: { Item.Item },
+	TimePlayed: number,
+	LastPlayed: string,
+	Id: string,
+	Name: string,
+}
+
 return {
-	Level = 0,
+	Level = 1,
 	Lives = 5,
 	Location = {
 		X = 0,
 		Y = 0,
 		Z = 0,
-		Area = "Area Name",
+		Area = "Start",
 	},
-	Skills = {},
 	Stats = {},
 	Quests = {},
-	Inventory = {},
+	Inventory = {
+		table.clone(Item),
+	},
 	TimePlayed = 0,
-	Id = "",
-}
+	LastPlayed = os.date(),
+	Id = HttpService:GenerateGUID(false):gsub("-", ""),
+	Name = "Character",
+} :: Character

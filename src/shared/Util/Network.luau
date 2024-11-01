@@ -84,7 +84,7 @@ function Channel.new(name: string, config: Config?): Channel
 	self.name = name
 	self._received = Signal.new()
 	self.config = config or DefaultConfig
-	self._remoteEvent = self.config.Type == "TCP" and remoteEvent or unreliableRemoteEvent
+	self._remoteEvent = self.config.Type == "UDP" and unreliableRemoteEvent or remoteEvent
 	self._remoteFunction = remoteFunction
 	for key, value in pairs(DefaultConfig) do
 		if self.config[key] == nil then
